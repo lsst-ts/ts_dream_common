@@ -1,14 +1,11 @@
-"""Sphinx configuration file for an LSST stack package.
+"""Sphinx configuration file for TSSW package"""
 
-This configuration only affects single-package Sphinx documentation builds.
-For more information, see:
-https://developer.lsst.io/stack/building-single-package-docs.html
-"""
-
-from documenteer.conf.pipelinespkg import *
+from documenteer.conf.pipelinespkg import *  # noqa
 
 
 project = "ts_dream_common"
-html_theme_options["logotext"] = project
+html_theme_options["logotext"] = project  # type: ignore # noqa
 html_title = project
 html_short_title = project
+
+intersphinx_mapping["ts_xml"] = ("https://ts-xml.lsst.io", None)  # type: ignore # noqa
