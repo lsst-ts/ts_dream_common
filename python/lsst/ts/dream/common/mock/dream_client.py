@@ -1,4 +1,4 @@
-# This file is part of ts_dream.
+# This file is part of ts_dream_common.
 #
 # Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
 # This product includes software developed by the LSST Project
@@ -19,20 +19,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import typing
+__all__ = ["MockDreamClient"]
 
-# See https://confluence.lsstcorp.org/display/LTS/Enabling+Mypy+in+Pytest for
-# why this construction is needed.
-if typing.TYPE_CHECKING:
-    __version__ = "?"
-else:
-    try:
-        from .version import *
-    except ImportError:
-        __version__ = "?"
 
-from .abstract_dream import *
-from .schema_registry import *
+class MockDreamClient:
+    """Class that implements the communication interface of a DREAM
+    instance."""
 
-# Import sub modules
-from . import mock
+    def __init__(self) -> None:
+        pass

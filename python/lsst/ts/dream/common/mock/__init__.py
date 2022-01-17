@@ -31,8 +31,5 @@ else:
     except ImportError:
         __version__ = "?"
 
-from .abstract_dream import *
-from .schema_registry import *
-
-# Import sub modules
-from . import mock
+from .dream import *
+from .dream_client import *
