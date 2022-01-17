@@ -26,60 +26,6 @@ pipeline {
                 }
             }
         }
-        stage("Checkout sal") {
-            steps {
-                script {
-                    sh """
-                    docker exec -u saluser \${container_name} sh -c \"source ~/.setup.sh && cd /home/saluser/repos/ts_sal && /home/saluser/.checkout_repo.sh \${work_branches} && git pull\"
-                    """
-                }
-            }
-        }
-        stage("Checkout salobj") {
-            steps {
-                script {
-                    sh """
-                    docker exec -u saluser \${container_name} sh -c \"source ~/.setup.sh && cd /home/saluser/repos/ts_salobj && /home/saluser/.checkout_repo.sh \${work_branches} && git pull\"
-                    """
-                }
-            }
-        }
-        stage("Checkout xml") {
-            steps {
-                script {
-                    sh """
-                    docker exec -u saluser \${container_name} sh -c \"source ~/.setup.sh && cd /home/saluser/repos/ts_xml && /home/saluser/.checkout_repo.sh \${work_branches} && git pull\"
-                    """
-                }
-            }
-        }
-        stage("Checkout IDL") {
-            steps {
-                script {
-                    sh """
-                    docker exec -u saluser \${container_name} sh -c \"source ~/.setup.sh && cd /home/saluser/repos/ts_idl && /home/saluser/.checkout_repo.sh \${work_branches} && git pull\"
-                    """
-                }
-            }
-        }
-        stage("Build IDL files") {
-            steps {
-                script {
-                    sh """
-                    docker exec -u saluser \${container_name} sh -c \"source ~/.setup.sh && setup ts_sal -t current && make_idl_files.py DREAM\"
-                    """
-                }
-            }
-        }
-        stage("Checkout config_ocs") {
-            steps {
-                script {
-                    sh """
-                    docker exec -u saluser \${container_name} sh -c \"source ~/.setup.sh && cd /home/saluser/repos/ts_config_ocs/ && /home/saluser/.checkout_repo.sh \${work_branches} \"
-                    """
-                }
-            }
-        }
         stage("Running tests") {
             steps {
                 script {
