@@ -120,6 +120,8 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_resume_and_stop(self) -> None:
+        assert self.mock_dream.status_task.done() is False
+
         await self.write(
             command_id=1,
             key="resume",
@@ -128,10 +130,9 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         )
         # Give time to the mock DREAM server to process the command.
         await asyncio.sleep(WRITE_WAIT_TIME)
+        assert self.mock_dream.status_task.done() is False
 
         data = await self.read()
-        self.log.debug(data)
-
         # TODO DM-33287: Validate that the status gets updated when commands
         #  are sent.
         assert data["device"] == common.mock.Device.MASTER
@@ -150,9 +151,11 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         )
         # Give time to the mock DREAM server to process the command.
         await asyncio.sleep(WRITE_WAIT_TIME)
+        assert self.mock_dream.status_task.done() is True
 
     async def test_ready(self) -> None:
         assert self.mock_dream.client_ready_for_data is False
+        assert self.mock_dream.new_data_products_task.done() is False
 
         await self.write(
             command_id=1,
@@ -163,6 +166,16 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         # Give time to the mock DREAM server to process the command.
         await asyncio.sleep(WRITE_WAIT_TIME)
         assert self.mock_dream.client_ready_for_data is True
+        assert self.mock_dream.new_data_products_task.done() is False
+
+        data = await self.read()
+        self.log.debug(data)
+        metadata = data["metadata"]
+        assert data["amount"] == len(metadata)
+        for data in metadata:
+            assert data["name"] is not None
+            assert data["location"] is not None
+            assert data["timestamp"] > 0
 
         await self.write(
             command_id=1,
@@ -173,6 +186,7 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         # Give time to the mock DREAM server to process the command.
         await asyncio.sleep(WRITE_WAIT_TIME)
         assert self.mock_dream.client_ready_for_data is False
+        assert self.mock_dream.new_data_products_task.done() is True
 
     def validate_weather_info(
         self, expected_weather_info: typing.Dict[str, typing.Union[float, bool]]

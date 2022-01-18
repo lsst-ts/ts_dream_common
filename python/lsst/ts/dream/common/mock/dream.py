@@ -33,10 +33,13 @@ import jsonschema
 
 from ..abstract_dream import AbstractDream
 from ..schema_registry import registry
-from lsst.ts import tcpip
+from lsst.ts import tcpip, utils
 
 # Interval between sending the mock DREAM server status [s].
 STATUS_INTERVAL = 5
+
+# Interval between sending the mock DREAM server new data products [s].
+NEW_DATA_PRODUCTS_INTERVAL = 7
 
 
 class ServerState(enum.IntEnum):
@@ -101,7 +104,6 @@ class WeatherInfo:
             The cloudcover [%].
         safe_observing_conditions : `float`
             Safe to observe (True) or not (False).
-
     """
 
     def __init__(self) -> None:
@@ -134,7 +136,6 @@ class MasterServerStatus:
             A rain sensor is present (True) or not (False).
         roof_status : `RoofStatus`
             The status of the roof.
-
     """
 
     def __init__(self) -> None:
@@ -168,8 +169,6 @@ class CameraServerStatus:
 
     Attributes
     ----------
-        device : `Device`
-            The device.
         state : `ServerState`
             The state of the server.
         error_code : `ErrorCode`
@@ -179,10 +178,9 @@ class CameraServerStatus:
         azimuth : `float`
             The azimuth [º].
         last_exposure_time_stamp : `float`
-            The last exposure time stamp [s].
+            The last exposure timestamp [s].
         exposure_time : `float`
             The exposure time [s].
-
     """
 
     def __init__(self, device: Device) -> None:
@@ -206,6 +204,32 @@ class CameraServerStatus:
         }
 
 
+class NewDataProduct:
+    """Class that holds the informattion regarding a new data product.
+
+    Parameters
+    ----------
+        name : `str`
+            The name of the new data product.
+        location : `str`
+            The location of the new data product.
+        timestamp : `float`
+            The UNIX timestamp of the new data product [s].
+    """
+
+    def __init__(self, name: str, location: str, timestamp: float) -> None:
+        self.name = name
+        self.location = location
+        self.timestamp = timestamp
+
+    def asdict(self) -> typing.Dict[str, typing.Any]:
+        return {
+            "name": self.name,
+            "location": self.location,
+            "timestamp": self.timestamp,
+        }
+
+
 class MockDream(AbstractDream, tcpip.OneClientServer):
     """Class that implements the communication interface of a DREAM server."""
 
@@ -219,6 +243,10 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         # client.
         self.status_task: asyncio.Future = asyncio.Future()
         self.master_server_status = MasterServerStatus()
+
+        # New data products loop for sending notifications that new data
+        # products are available to the client.
+        self.new_data_products_task: asyncio.Future = asyncio.Future()
 
         super().__init__(
             name="MockDream",
@@ -335,6 +363,10 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
     async def set_ready_for_data(self, ready: bool) -> None:
         self.log.debug(f"set_ready_for_data with ready={ready!r}")
         self.client_ready_for_data = ready
+        if ready:
+            self.new_data_products_task = asyncio.create_task(self.new_data_products())
+        else:
+            self.new_data_products_task.cancel()
 
     async def set_data_archived(self) -> None:
         self.log.debug("set_data_archived")
@@ -357,7 +389,13 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
                 #  commands are sent and that it includes the camera server
                 #  statuses.
                 self.log.debug("Sending status.")
-                await self.write(self.master_server_status.asdict())
+                master_status = self.master_server_status.asdict()
+                validator = jsonschema.Draft7Validator(
+                    schema=registry["master_server_status"]
+                )
+                # TODO DM-33287: Needs better error handling.
+                validator.validate(master_status)
+                await self.write(master_status)
                 await asyncio.sleep(STATUS_INTERVAL)
 
         except Exception:
@@ -365,3 +403,30 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
 
     async def new_data_products(self) -> None:
         self.log.debug("new_data_products")
+        new_data_product_1 = NewDataProduct(
+            name="NewDataProductOne", location="file:///", timestamp=utils.current_tai()
+        )
+        new_data_product_2 = NewDataProduct(
+            name="NewDataProductTwo", location="file:///", timestamp=utils.current_tai()
+        )
+        metadata = [new_data_product_1.asdict(), new_data_product_2.asdict()]
+        new_data_products = {
+            "amount": len(metadata),
+            "metadata": metadata,
+        }
+        try:
+            while True:
+                # TODO DM-33287: Make sure that the new data products
+                #  information gets updated ramdomly to mock a real DREAM
+                #  server.
+                self.log.debug("Sending new data products.")
+                validator = jsonschema.Draft7Validator(
+                    schema=registry["new_data_products"]
+                )
+                # TODO DM-33287: Needs better error handling.
+                validator.validate(new_data_products)
+                await self.write(new_data_products)
+                await asyncio.sleep(NEW_DATA_PRODUCTS_INTERVAL)
+
+        except Exception:
+            self.log.exception("new_data_products loop failed.")

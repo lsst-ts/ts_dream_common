@@ -58,6 +58,93 @@ registry: typing.Dict[str, typing.Any] = {
 }
         """
     ),
+    "master_server_status": json.loads(
+        """
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for Sensor Telemetry",
+  "type": "object",
+  "properties": {
+    "device": {
+      "type": "integer"
+    },
+    "state": {
+      "type": "integer"
+    },
+    "start_time": {
+      "type": "number"
+    },
+    "stop_time": {
+      "type": "number"
+    },
+    "error_code": {
+      "type": "integer"
+    },
+    "rain_sensor": {
+      "type": "boolean"
+    },
+    "roof_status": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "device",
+    "state",
+    "start_time",
+    "stop_time",
+    "error_code",
+    "rain_sensor",
+    "roof_status"
+  ],
+  "additionalProperties": false
+}
+        """
+    ),
+    "new_data_products": json.loads(
+        """
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for Sensor Telemetry",
+  "type": "object",
+  "properties": {
+    "amount": {
+      "type": "integer"
+    },
+    "metadata": {
+      "type": "array",
+      "minItems": 1,
+      "items": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "number"
+            }
+          }
+        }
+      ],
+      "required": [
+        "name",
+        "location",
+        "timestamp"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "amount",
+    "metadata"
+  ],
+  "additionalProperties": false
+}
+        """
+    ),
     "weather_info": json.loads(
         """
 {
