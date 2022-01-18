@@ -57,5 +57,51 @@ registry: typing.Dict[str, typing.Any] = {
   "additionalProperties": false
 }
         """
-    )
+    ),
+    "weather_info": json.loads(
+        """
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for Sensor Telemetry",
+  "type": "object",
+  "properties": {
+    "temperature": {
+      "type": "number"
+    },
+    "humidity": {
+      "type": "number"
+    },
+    "wind_speed": {
+      "type": "number"
+    },
+    "wind_direction": {
+      "type": "number"
+    },
+    "pressure": {
+      "type": "number"
+    },
+    "rain": {
+      "type": "number"
+    },
+    "cloudcover": {
+      "type": "number"
+    },
+    "safe_observing_conditions": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "temperature",
+    "humidity",
+    "wind_speed",
+    "wind_direction",
+    "pressure",
+    "rain",
+    "cloudcover",
+    "safe_observing_conditions"
+  ],
+  "additionalProperties": false
+}
+        """
+    ),
 }

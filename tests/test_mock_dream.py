@@ -22,9 +22,9 @@
 import asyncio
 import json
 import logging
-import unittest
-
+import random
 import typing
+import unittest
 
 from lsst.ts.dream import common
 from lsst.ts import tcpip, utils
@@ -40,7 +40,6 @@ TIMEOUT = 5
 class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.log = logging.getLogger(type(self).__name__)
-        self.log.debug("WOUTERRRR creating mock dream")
         self.mock_dream = common.mock.MockDream()
 
         await self.mock_dream.start_task
@@ -51,7 +50,6 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         assert self.mock_dream.connected
 
     async def asyncTearDown(self) -> None:
-        self.log.info("===== Start of asyncTearDown =====")
         if self.mock_dream.connected:
             await self.mock_dream.disconnect()
         if self.writer:
@@ -86,16 +84,62 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         self.writer.write(st.encode() + tcpip.TERMINATOR)
         await self.writer.drain()
 
-    async def test_commands(self) -> None:
+    async def test_all_commands_except_weather_info(self) -> None:
         for key in self.mock_dream.dispatch_dict:
             parameters: typing.Dict[str, typing.Any] = {}
             if key == "readyForData":
                 parameters = {"ready": True}
             if key == "setWeatherInfo":
-                parameters = {"weather_info": {}}
+                # "setWeatherInfo" is tested in a separate method.
+                continue
             await self.write(
                 command_id=1,
                 key=key,
                 parameters=parameters,
                 time_command_sent=utils.current_tai(),
             )
+
+    def validate_weather_info(
+        self, expected_weather_info: typing.Dict[str, typing.Union[float, bool]]
+    ) -> None:
+        for key in expected_weather_info:
+            assert (
+                getattr(self.mock_dream.weather_info, key) == expected_weather_info[key]
+            )
+
+    async def test_weather_info(self) -> None:
+        # First validate the default values of the weather info data in the
+        # mock DREAM server.
+        weather_info = {
+            "temperature": 0.0,
+            "humidity": 0.0,
+            "wind_speed": 0.0,
+            "wind_direction": 0.0,
+            "pressure": 0.0,
+            "rain": 0.0,
+            "cloudcover": 0.0,
+            "safe_observing_conditions": False,
+        }
+        self.validate_weather_info(expected_weather_info=weather_info)
+
+        # Now set new values and verify that the mock DREAM server has picked
+        # them up.
+        weather_info = {
+            "temperature": random.uniform(-10, 30),
+            "humidity": random.uniform(0, 100),
+            "wind_speed": random.uniform(0, 100),
+            "wind_direction": random.uniform(0, 360),
+            "pressure": random.uniform(70000, 100000),
+            "rain": random.uniform(0, 100),
+            "cloudcover": random.uniform(0, 100),
+            "safe_observing_conditions": True,
+        }
+        await self.write(
+            command_id=1,
+            key="setWeatherInfo",
+            parameters={"weather_info": weather_info},
+            time_command_sent=utils.current_tai(),
+        )
+        # Give time to the mock DREAM server to process the command.
+        await asyncio.sleep(0.01)
+        self.validate_weather_info(expected_weather_info=weather_info)

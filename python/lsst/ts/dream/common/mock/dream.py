@@ -35,12 +35,47 @@ from ..schema_registry import registry
 from lsst.ts import tcpip
 
 
+class WeatherInfo:
+    """Class that holds the weather info.
+
+    Attributes:
+        temperature : `float`
+            The temperature [ºC].
+        humidty : `float`
+            The humidty [%].
+        wind_speed : `float`
+            The wind speed [m/s].
+        wind_direction : `float`
+            The wind direction [º azimuth].
+        pressure : `float`
+            The pressure [Pa].
+        rain : `float`
+            The rain [mm].
+        cloudcover : `float`
+            The cloudcover [%].
+        safe_observing_conditions : `float`
+            Safe to observe (True) or not (False).
+
+    """
+
+    def __init__(self) -> None:
+        self.temperature = 0.0
+        self.humidity = 0.0
+        self.wind_speed = 0.0
+        self.wind_direction = 0.0
+        self.pressure = 0.0
+        self.rain = 0.0
+        self.cloudcover = 0.0
+        self.safe_observing_conditions = False
+
+
 class MockDream(AbstractDream, tcpip.OneClientServer):
     """Class that implements the communication interface of a DREAM server."""
 
     def __init__(self) -> None:
         self.log = logging.getLogger(type(self).__name__)
         self.read_loop_task: asyncio.Future = asyncio.Future()
+
         super().__init__(
             name="MockDream",
             host="0.0.0.0",
@@ -60,6 +95,9 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
             "dataArchived": self.set_data_archived,
             "setWeatherInfo": self.set_weather_info,
         }
+
+        # Hold the weather info.
+        self.weather_info = WeatherInfo()
 
     def connect_callback(self, server: MockDream) -> None:
         """A client has connected or disconnected."""
@@ -101,6 +139,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
                     self.log.debug(f"Read command line: {line!r}")
                     items = json.loads(line)
                     # validate the incoming message
+                    # TODO: Needs better error handling.
                     validator.validate(items)
                     key = items["key"]
                     kwargs = items["parameters"]
@@ -140,6 +179,11 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         self, weather_info: typing.Dict[str, typing.Union[float, bool]]
     ) -> None:
         self.log.debug(f"set_weather_info with weather_info={weather_info!r}")
+        validator = jsonschema.Draft7Validator(schema=registry["weather_info"])
+        # TODO: Needs better error handling.
+        validator.validate(weather_info)
+        for key in weather_info:
+            setattr(self.weather_info, key, weather_info[key])
 
     async def status(self) -> None:
         self.log.debug("status")
