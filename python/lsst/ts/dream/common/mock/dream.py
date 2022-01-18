@@ -21,7 +21,7 @@ from __future__ import annotations
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["MockDream", "RoofStatus"]
+__all__ = ["MockDream", "ServerState", "ErrorCode", "RoofStatus", "Device"]
 
 import asyncio
 import enum
@@ -35,18 +35,56 @@ from ..abstract_dream import AbstractDream
 from ..schema_registry import registry
 from lsst.ts import tcpip
 
+# Interval between sending the mock DREAM server status [s].
+STATUS_INTERVAL = 5
+
+
+class ServerState(enum.IntEnum):
+    """The state the mock DREAM server can be in."""
+
+    INITIALIZING = enum.auto()
+    HIBERNATING = enum.auto()
+    COOLING_DOWN = enum.auto()
+    CALIBRATING = enum.auto()
+    READY = enum.auto()
+    OPEN = enum.auto()
+    OBSERVING = enum.auto()
+    MAINTENANCE = enum.auto()
+    SHUTTING_DOWN = enum.auto()
+
+
+class ErrorCode(enum.IntEnum):
+    """Error Code enum."""
+
+    # TODO DM-33287: Add more ErrorCode values.
+    OK = enum.auto()
+
 
 class RoofStatus(enum.IntEnum):
     """Roof status enum."""
 
-    CLOSED = 0
-    OPEN = 1
+    CLOSED = enum.auto()
+    OPEN = enum.auto()
+    OPENING = enum.auto()
+    CLOSING = enum.auto()
+
+
+class Device(enum.IntEnum):
+    """Device enum."""
+
+    MASTER = enum.auto()
+    NORTH = enum.auto()
+    EAST = enum.auto()
+    SOUTH = enum.auto()
+    WEST = enum.auto()
+    ZENITH = enum.auto()
 
 
 class WeatherInfo:
     """Class that holds the weather info.
 
-    Attributes:
+    Attributes
+    ----------
         temperature : `float`
             The temperature [ºC].
         humidty : `float`
@@ -77,12 +115,110 @@ class WeatherInfo:
         self.safe_observing_conditions = False
 
 
+class MasterServerStatus:
+    """Class that holds the status of the master server.
+
+    Attributes
+    ----------
+        device : `Device`
+            The device.
+        state : `ServerState`
+            The state of the server.
+        start_time : `float`
+            The last start time UNIX time stamp [s].
+        stop_time : `float`
+            The last stop time UNIX time stamp [s].
+        error_code : `ErrorCode`
+            The error code.
+        rain_sensor : `bool`
+            A rain sensor is present (True) or not (False).
+        roof_status : `RoofStatus`
+            The status of the roof.
+
+    """
+
+    def __init__(self) -> None:
+        self.device = Device.MASTER
+        self.state = ServerState.INITIALIZING
+        self.start_time = 0.0
+        self.stop_time = 0.0
+        self.error_code = ErrorCode.OK
+        self.rain_sensor = True
+        self.roof_status = RoofStatus.CLOSED
+
+    def asdict(self) -> typing.Dict[str, typing.Any]:
+        return {
+            "device": self.device,
+            "state": self.state,
+            "start_time": self.start_time,
+            "stop_time": self.stop_time,
+            "error_code": self.error_code,
+            "rain_sensor": self.rain_sensor,
+            "roof_status": self.roof_status,
+        }
+
+
+class CameraServerStatus:
+    """Class that holds the status of a camera server.
+
+    Parameters
+    ----------
+    device : `Device`
+        The device.
+
+    Attributes
+    ----------
+        device : `Device`
+            The device.
+        state : `ServerState`
+            The state of the server.
+        error_code : `ErrorCode`
+            The error code.
+        altitude : `float`
+            The altitude [º].
+        azimuth : `float`
+            The azimuth [º].
+        last_exposure_time_stamp : `float`
+            The last exposure time stamp [s].
+        exposure_time : `float`
+            The exposure time [s].
+
+    """
+
+    def __init__(self, device: Device) -> None:
+        self.device = device
+        self.state = ServerState.INITIALIZING
+        self.error_code = ErrorCode.OK
+        self.altitude = 0.0
+        self.azimuth = 0.0
+        self.last_exposure_time_stamp = 0.0
+        self.exposure_time = 0.0
+
+    def asdict(self) -> typing.Dict[str, typing.Any]:
+        return {
+            "device": self.device,
+            "state": self.state,
+            "error_code": self.error_code,
+            "altitude": self.altitude,
+            "azimuth": self.azimuth,
+            "last_exposure_time_stamp": self.last_exposure_time_stamp,
+            "exposure_time": self.exposure_time,
+        }
+
+
 class MockDream(AbstractDream, tcpip.OneClientServer):
     """Class that implements the communication interface of a DREAM server."""
 
     def __init__(self) -> None:
         self.log = logging.getLogger(type(self).__name__)
+
+        # Read loop for receiving commands.
         self.read_loop_task: asyncio.Future = asyncio.Future()
+
+        # Status loop for sending the status of the mock DREAM server to the
+        # client.
+        self.status_task: asyncio.Future = asyncio.Future()
+        self.master_server_status = MasterServerStatus()
 
         super().__init__(
             name="MockDream",
@@ -104,7 +240,6 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
             "setWeatherInfo": self.set_weather_info,
         }
 
-        self.roof_status = RoofStatus.CLOSED
         self.client_ready_for_data = False
 
         # Hold the weather info.
@@ -155,6 +290,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
                     key = items["key"]
                     kwargs = items["parameters"]
                     func = self.dispatch_dict[key]
+                    # TODO DM-33287: Needs sending acknowledgements.
                     await func(**kwargs)
 
         except Exception:
@@ -170,25 +306,31 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
 
     async def resume(self) -> None:
         self.log.debug("resume")
+        self.status_task = asyncio.create_task(self.status())
 
     async def open_roof(self) -> None:
         self.log.debug("open_roof")
-        if self.roof_status == RoofStatus.CLOSED:
-            self.roof_status = RoofStatus.OPEN
+        # This can be improved by implementing a delay during which the roof is
+        # opening.
+        if self.master_server_status.roof_status == RoofStatus.CLOSED:
+            self.master_server_status.roof_status = RoofStatus.OPEN
         else:
             # TODO DM-33287: Needs better error handling.
             pass
 
     async def close_roof(self) -> None:
         self.log.debug("close_roof")
-        if self.roof_status == RoofStatus.OPEN:
-            self.roof_status = RoofStatus.CLOSED
+        # This can be improved by implementing a delay during which the roof is
+        # closing.
+        if self.master_server_status.roof_status == RoofStatus.OPEN:
+            self.master_server_status.roof_status = RoofStatus.CLOSED
         else:
             # TODO DM-33287: Needs better error handling.
             pass
 
     async def stop(self) -> None:
         self.log.debug("stop")
+        self.status_task.cancel()
 
     async def set_ready_for_data(self, ready: bool) -> None:
         self.log.debug(f"set_ready_for_data with ready={ready!r}")
@@ -209,6 +351,17 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
 
     async def status(self) -> None:
         self.log.debug("status")
+        try:
+            while True:
+                # TODO DM-33287: Make sure that the status gets updated when
+                #  commands are sent and that it includes the camera server
+                #  statuses.
+                self.log.debug("Sending status.")
+                await self.write(self.master_server_status.asdict())
+                await asyncio.sleep(STATUS_INTERVAL)
+
+        except Exception:
+            self.log.exception("status loop failed.")
 
     async def new_data_products(self) -> None:
         self.log.debug("new_data_products")

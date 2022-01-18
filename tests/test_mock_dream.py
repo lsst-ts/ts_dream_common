@@ -88,7 +88,10 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         await self.writer.drain()
 
     async def test_open_and_close_roof(self) -> None:
-        assert self.mock_dream.roof_status == common.mock.RoofStatus.CLOSED
+        assert (
+            self.mock_dream.master_server_status.roof_status
+            == common.mock.RoofStatus.CLOSED
+        )
 
         await self.write(
             command_id=1,
@@ -98,7 +101,10 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         )
         # Give time to the mock DREAM server to process the command.
         await asyncio.sleep(WRITE_WAIT_TIME)
-        assert self.mock_dream.roof_status == common.mock.RoofStatus.OPEN
+        assert (
+            self.mock_dream.master_server_status.roof_status
+            == common.mock.RoofStatus.OPEN
+        )
 
         await self.write(
             command_id=1,
@@ -108,7 +114,42 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         )
         # Give time to the mock DREAM server to process the command.
         await asyncio.sleep(WRITE_WAIT_TIME)
-        assert self.mock_dream.roof_status == common.mock.RoofStatus.CLOSED
+        assert (
+            self.mock_dream.master_server_status.roof_status
+            == common.mock.RoofStatus.CLOSED
+        )
+
+    async def test_resume_and_stop(self) -> None:
+        await self.write(
+            command_id=1,
+            key="resume",
+            parameters={},
+            time_command_sent=utils.current_tai(),
+        )
+        # Give time to the mock DREAM server to process the command.
+        await asyncio.sleep(WRITE_WAIT_TIME)
+
+        data = await self.read()
+        self.log.debug(data)
+
+        # TODO DM-33287: Validate that the status gets updated when commands
+        #  are sent.
+        assert data["device"] == common.mock.Device.MASTER
+        assert data["state"] == common.mock.ServerState.INITIALIZING
+        assert data["start_time"] == 0.0
+        assert data["stop_time"] == 0.0
+        assert data["error_code"] == common.mock.ErrorCode.OK
+        assert data["rain_sensor"] is True
+        assert data["roof_status"] == common.mock.RoofStatus.CLOSED
+
+        await self.write(
+            command_id=1,
+            key="stop",
+            parameters={},
+            time_command_sent=utils.current_tai(),
+        )
+        # Give time to the mock DREAM server to process the command.
+        await asyncio.sleep(WRITE_WAIT_TIME)
 
     async def test_ready(self) -> None:
         assert self.mock_dream.client_ready_for_data is False
