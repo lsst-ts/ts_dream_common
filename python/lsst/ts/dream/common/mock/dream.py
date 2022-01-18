@@ -21,9 +21,10 @@ from __future__ import annotations
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["MockDream"]
+__all__ = ["MockDream", "RoofStatus"]
 
 import asyncio
+import enum
 import logging
 import json
 import typing
@@ -33,6 +34,13 @@ import jsonschema
 from ..abstract_dream import AbstractDream
 from ..schema_registry import registry
 from lsst.ts import tcpip
+
+
+class RoofStatus(enum.IntEnum):
+    """Roof status enum."""
+
+    CLOSED = 0
+    OPEN = 1
 
 
 class WeatherInfo:
@@ -96,6 +104,9 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
             "setWeatherInfo": self.set_weather_info,
         }
 
+        self.roof_status = RoofStatus.CLOSED
+        self.client_ready_for_data = False
+
         # Hold the weather info.
         self.weather_info = WeatherInfo()
 
@@ -139,7 +150,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
                     self.log.debug(f"Read command line: {line!r}")
                     items = json.loads(line)
                     # validate the incoming message
-                    # TODO: Needs better error handling.
+                    # TODO DM-33287: Needs better error handling.
                     validator.validate(items)
                     key = items["key"]
                     kwargs = items["parameters"]
@@ -162,15 +173,26 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
 
     async def open_roof(self) -> None:
         self.log.debug("open_roof")
+        if self.roof_status == RoofStatus.CLOSED:
+            self.roof_status = RoofStatus.OPEN
+        else:
+            # TODO DM-33287: Needs better error handling.
+            pass
 
     async def close_roof(self) -> None:
         self.log.debug("close_roof")
+        if self.roof_status == RoofStatus.OPEN:
+            self.roof_status = RoofStatus.CLOSED
+        else:
+            # TODO DM-33287: Needs better error handling.
+            pass
 
     async def stop(self) -> None:
         self.log.debug("stop")
 
     async def set_ready_for_data(self, ready: bool) -> None:
         self.log.debug(f"set_ready_for_data with ready={ready!r}")
+        self.client_ready_for_data = ready
 
     async def set_data_archived(self) -> None:
         self.log.debug("set_data_archived")
@@ -180,7 +202,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
     ) -> None:
         self.log.debug(f"set_weather_info with weather_info={weather_info!r}")
         validator = jsonschema.Draft7Validator(schema=registry["weather_info"])
-        # TODO: Needs better error handling.
+        # TODO DM-33287: Needs better error handling.
         validator.validate(weather_info)
         for key in weather_info:
             setattr(self.weather_info, key, weather_info[key])

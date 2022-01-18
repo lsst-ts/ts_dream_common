@@ -36,6 +36,9 @@ logging.basicConfig(
 # Standard timeout in seconds.
 TIMEOUT = 5
 
+# Wait time for a write to get processed
+WRITE_WAIT_TIME = 0.01
+
 
 class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
@@ -84,20 +87,51 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         self.writer.write(st.encode() + tcpip.TERMINATOR)
         await self.writer.drain()
 
-    async def test_all_commands_except_weather_info(self) -> None:
-        for key in self.mock_dream.dispatch_dict:
-            parameters: typing.Dict[str, typing.Any] = {}
-            if key == "readyForData":
-                parameters = {"ready": True}
-            if key == "setWeatherInfo":
-                # "setWeatherInfo" is tested in a separate method.
-                continue
-            await self.write(
-                command_id=1,
-                key=key,
-                parameters=parameters,
-                time_command_sent=utils.current_tai(),
-            )
+    async def test_open_and_close_roof(self) -> None:
+        assert self.mock_dream.roof_status == common.mock.RoofStatus.CLOSED
+
+        await self.write(
+            command_id=1,
+            key="openRoof",
+            parameters={},
+            time_command_sent=utils.current_tai(),
+        )
+        # Give time to the mock DREAM server to process the command.
+        await asyncio.sleep(WRITE_WAIT_TIME)
+        assert self.mock_dream.roof_status == common.mock.RoofStatus.OPEN
+
+        await self.write(
+            command_id=1,
+            key="closeRoof",
+            parameters={},
+            time_command_sent=utils.current_tai(),
+        )
+        # Give time to the mock DREAM server to process the command.
+        await asyncio.sleep(WRITE_WAIT_TIME)
+        assert self.mock_dream.roof_status == common.mock.RoofStatus.CLOSED
+
+    async def test_ready(self) -> None:
+        assert self.mock_dream.client_ready_for_data is False
+
+        await self.write(
+            command_id=1,
+            key="readyForData",
+            parameters={"ready": True},
+            time_command_sent=utils.current_tai(),
+        )
+        # Give time to the mock DREAM server to process the command.
+        await asyncio.sleep(WRITE_WAIT_TIME)
+        assert self.mock_dream.client_ready_for_data is True
+
+        await self.write(
+            command_id=1,
+            key="readyForData",
+            parameters={"ready": False},
+            time_command_sent=utils.current_tai(),
+        )
+        # Give time to the mock DREAM server to process the command.
+        await asyncio.sleep(WRITE_WAIT_TIME)
+        assert self.mock_dream.client_ready_for_data is False
 
     def validate_weather_info(
         self, expected_weather_info: typing.Dict[str, typing.Union[float, bool]]
@@ -141,5 +175,5 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             time_command_sent=utils.current_tai(),
         )
         # Give time to the mock DREAM server to process the command.
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(WRITE_WAIT_TIME)
         self.validate_weather_info(expected_weather_info=weather_info)
