@@ -47,24 +47,15 @@ class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
         await self.mock_dream.start_task
         assert self.mock_dream.server.is_serving()
 
-    async def asyncTearDown(self) -> None:
-        if self.mock_dream_client.connected:
-            await self.mock_dream_client.disconnect()
-        await self.mock_dream.close()
-
-    async def validate_connect(self) -> None:
         assert self.mock_dream_client.connected is False
         await self.mock_dream_client.connect()
         assert self.mock_dream_client.connected is True
 
-    async def test_connect_client(self) -> None:
-        await self.validate_connect()
-
-    async def test_disconnect_client(self) -> None:
-        await self.validate_connect()
-
-        await self.mock_dream_client.disconnect()
-        assert self.mock_dream_client.connected is False
+    async def asyncTearDown(self) -> None:
+        if self.mock_dream_client.connected:
+            await self.mock_dream_client.disconnect()
+            assert self.mock_dream_client.connected is False
+        await self.mock_dream.close()
 
     async def validate_roof_status(self, roof_status: common.mock.RoofStatus) -> None:
         # Give time to the mock DREAM server to process the command.
@@ -73,8 +64,6 @@ class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_open_and_close_roof(self) -> None:
         await self.validate_roof_status(common.mock.RoofStatus.CLOSED)
-
-        await self.validate_connect()
 
         await self.mock_dream_client.run_command(command="openRoof")
         await self.validate_roof_status(common.mock.RoofStatus.OPEN)
@@ -89,8 +78,6 @@ class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_resume_and_stop(self) -> None:
         await self.validate_dream_status_task(done=False)
-
-        await self.validate_connect()
 
         await self.mock_dream_client.run_command(command="resume")
         await self.validate_dream_status_task(done=False)
@@ -117,8 +104,6 @@ class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_ready(self) -> None:
         await self.validate_ready(ready_for_data=False, done=False)
-
-        await self.validate_connect()
 
         await self.mock_dream_client.run_command(command="readyForData", ready=True)
         await self.validate_ready(ready_for_data=True, done=False)
@@ -157,8 +142,6 @@ class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
             "safe_observing_conditions": False,
         }
         self.validate_weather_info(expected_weather_info=weather_info)
-
-        await self.validate_connect()
 
         # Now set new values and verify that the mock DREAM server has picked
         # them up.
