@@ -20,14 +20,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
-import json
 import logging
 import random
 import typing
 import unittest
 
 from lsst.ts.dream import common
-from lsst.ts import tcpip, utils
 
 logging.basicConfig(
     format="%(asctime)s:%(levelname)s:%(name)s:%(message)s", level=logging.DEBUG
@@ -40,53 +38,33 @@ TIMEOUT = 5
 WRITE_WAIT_TIME = 0.01
 
 
-class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
+class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.log = logging.getLogger(type(self).__name__)
         self.mock_dream = common.mock.MockDream()
-        self.index_generator = common.index_generator()
+        self.mock_dream_client = common.mock.MockDreamClient()
 
         await self.mock_dream.start_task
         assert self.mock_dream.server.is_serving()
-        self.reader, self.writer = await asyncio.open_connection(
-            host=tcpip.LOCAL_HOST, port=self.mock_dream.port
-        )
-        assert self.mock_dream.connected
 
     async def asyncTearDown(self) -> None:
-        if self.mock_dream.connected:
-            await self.mock_dream.disconnect()
-        if self.writer:
-            self.writer.close()
-            await self.writer.wait_closed()
+        if self.mock_dream_client.connected:
+            await self.mock_dream_client.disconnect()
         await self.mock_dream.close()
 
-    async def read(self) -> typing.Dict[str, typing.Any]:
-        """Read a string from the reader and unmarshal it
+    async def validate_connect(self) -> None:
+        assert self.mock_dream_client.connected is False
+        await self.mock_dream_client.connect()
+        assert self.mock_dream_client.connected is True
 
-        Returns
-        -------
-        data : `dict`
-            A dictionary with objects representing the string read.
-        """
-        read_bytes = await asyncio.wait_for(
-            self.reader.readuntil(tcpip.TERMINATOR), timeout=TIMEOUT
-        )
-        data = json.loads(read_bytes.decode())
-        return data
+    async def test_connect_client(self) -> None:
+        await self.validate_connect()
 
-    async def write(self, **data: typing.Any) -> None:
-        """Write the data appended with a tcpip.TERMINATOR string.
+    async def test_disconnect_client(self) -> None:
+        await self.validate_connect()
 
-        Parameters
-        ----------
-        data:
-            The data to write.
-        """
-        st = json.dumps({**data})
-        assert self.writer is not None
-        self.writer.write(st.encode() + tcpip.TERMINATOR)
-        await self.writer.drain()
+        await self.mock_dream_client.disconnect()
+        assert self.mock_dream_client.connected is False
 
     async def validate_roof_status(self, roof_status: common.mock.RoofStatus) -> None:
         # Give time to the mock DREAM server to process the command.
@@ -96,20 +74,12 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_open_and_close_roof(self) -> None:
         await self.validate_roof_status(common.mock.RoofStatus.CLOSED)
 
-        await self.write(
-            command_id=next(self.index_generator),
-            key="openRoof",
-            parameters={},
-            time_command_sent=utils.current_tai(),
-        )
+        await self.validate_connect()
+
+        await self.mock_dream_client.run_command(command="openRoof")
         await self.validate_roof_status(common.mock.RoofStatus.OPEN)
 
-        await self.write(
-            command_id=1,
-            key="closeRoof",
-            parameters={},
-            time_command_sent=utils.current_tai(),
-        )
+        await self.mock_dream_client.run_command(command="closeRoof")
         await self.validate_roof_status(common.mock.RoofStatus.CLOSED)
 
     async def validate_dream_status_task(self, done: bool) -> None:
@@ -120,15 +90,12 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_resume_and_stop(self) -> None:
         await self.validate_dream_status_task(done=False)
 
-        await self.write(
-            command_id=1,
-            key="resume",
-            parameters={},
-            time_command_sent=utils.current_tai(),
-        )
+        await self.validate_connect()
+
+        await self.mock_dream_client.run_command(command="resume")
         await self.validate_dream_status_task(done=False)
 
-        data = await self.read()
+        data = await self.mock_dream_client.read()
         # TODO DM-33287: Validate that the status gets updated when commands
         #  are sent.
         assert data["device"] == common.mock.Device.MASTER
@@ -139,12 +106,7 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         assert data["rain_sensor"] is True
         assert data["roof_status"] == common.mock.RoofStatus.CLOSED
 
-        await self.write(
-            command_id=1,
-            key="stop",
-            parameters={},
-            time_command_sent=utils.current_tai(),
-        )
+        await self.mock_dream_client.run_command(command="stop")
         await self.validate_dream_status_task(done=True)
 
     async def validate_ready(self, ready_for_data: bool, done: bool) -> None:
@@ -156,15 +118,12 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_ready(self) -> None:
         await self.validate_ready(ready_for_data=False, done=False)
 
-        await self.write(
-            command_id=1,
-            key="readyForData",
-            parameters={"ready": True},
-            time_command_sent=utils.current_tai(),
-        )
+        await self.validate_connect()
+
+        await self.mock_dream_client.run_command(command="readyForData", ready=True)
         await self.validate_ready(ready_for_data=True, done=False)
 
-        data = await self.read()
+        data = await self.mock_dream_client.read()
         self.log.debug(data)
         metadata = data["metadata"]
         assert data["amount"] == len(metadata)
@@ -173,12 +132,7 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             assert data["location"] is not None
             assert data["timestamp"] > 0
 
-        await self.write(
-            command_id=1,
-            key="readyForData",
-            parameters={"ready": False},
-            time_command_sent=utils.current_tai(),
-        )
+        await self.mock_dream_client.run_command(command="readyForData", ready=False)
         await self.validate_ready(ready_for_data=False, done=True)
 
     def validate_weather_info(
@@ -204,6 +158,8 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         }
         self.validate_weather_info(expected_weather_info=weather_info)
 
+        await self.validate_connect()
+
         # Now set new values and verify that the mock DREAM server has picked
         # them up.
         weather_info = {
@@ -216,11 +172,8 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             "cloudcover": random.uniform(0, 100),
             "safe_observing_conditions": True,
         }
-        await self.write(
-            command_id=1,
-            key="setWeatherInfo",
-            parameters={"weather_info": weather_info},
-            time_command_sent=utils.current_tai(),
+        await self.mock_dream_client.run_command(
+            command="setWeatherInfo", weather_info=weather_info
         )
         # Give time to the mock DREAM server to process the command.
         await asyncio.sleep(WRITE_WAIT_TIME)
