@@ -1,4 +1,4 @@
-# This file is part of ts_dream.
+# This file is part of ts_dream_common.
 #
 # Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
 # This product includes software developed by the LSST Project
@@ -27,28 +27,30 @@ from abc import ABC, abstractmethod
 
 
 class AbstractDream(ABC):
-    """Abstract class that defines the interface to communicate with a
-    DREAM instance."""
+    """Abstract class that defines the communication interface of a DREAM
+    instance."""
 
     @abstractmethod
     async def resume(self) -> None:
-        """Indicate that DREAM is permitted to resume automated
-        operations."""
+        """Indicate that DREAM is permitted to resume automated operations."""
         raise NotImplementedError
 
-    async def open_hatch(self) -> None:
-        """Open the hatch if DREAM has evaluated that it is safe to do
-        so."""
+    @abstractmethod
+    async def open_roof(self) -> None:
+        """Open the roof if DREAM has evaluated that it is safe to do so."""
         raise NotImplementedError
 
-    async def close_hatch(self) -> None:
-        """Close the hatch."""
+    @abstractmethod
+    async def close_roof(self) -> None:
+        """Close the roof."""
         raise NotImplementedError
 
+    @abstractmethod
     async def stop(self) -> None:
-        """Immediately stop operations and close the hatch."""
+        """Immediately stop operations and close the roof."""
         raise NotImplementedError
 
+    @abstractmethod
     async def set_ready_for_data(self, ready: bool) -> None:
         """Inform DREAM that Rubin Observatory is ready to receive data as
         indicated.
@@ -60,20 +62,48 @@ class AbstractDream(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
     async def set_data_archived(self) -> None:
-        """Inform DREAM that Rubin Observatory has received and
-        archived a data product.
+        """Inform DREAM that Rubin Observatory has received and archived a data
+        product.
 
         Notes
         -----
-        This method will require one or more parameters. Currently it
-        is unknown what the parameters will be so they will be added
-        later.
+        This method will require one or more parameters. Currently it is
+        unknown what the parameters will be so they will be added later.
 
         """
         raise NotImplementedError
 
+    @abstractmethod
     async def set_weather_info(
         self, weather_info: typing.Dict[str, typing.Union[float, bool]]
     ) -> None:
+        """Inform DREAM of the current weather conditions.
+
+        Parameters
+        ----------
+        weather_info : `dict`
+            A dict of weather information to send. It should contain the
+            following keys:
+
+                - temperature : `float`
+                - humidity : `float`
+                - wind_speed : `float`
+                - wind_direction : `float`
+                - pressure : `float`
+                - rain : `float`
+                - cloudcover : `float`
+                - safe_observing_conditions : `bool`
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def status(self) -> None:
+        """Send the current status of DREAM."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def new_data_products(self) -> None:
+        """Inform the client that new data products are available."""
         raise NotImplementedError
