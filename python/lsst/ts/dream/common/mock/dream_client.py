@@ -25,7 +25,6 @@ import asyncio
 import json
 import typing
 
-from ..index_generator import index_generator
 from lsst.ts import tcpip, utils
 
 # Time limit for connecting to the RPi (seconds)
@@ -50,7 +49,7 @@ class MockDreamClient:
         self.stream_lock = asyncio.Lock()
 
         # Index generator for command indices.
-        self.index_generator = index_generator()
+        self.index_generator = utils.index_generator()
 
     @property
     def connected(self) -> bool:

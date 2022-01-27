@@ -44,7 +44,7 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.log = logging.getLogger(type(self).__name__)
         self.mock_dream = common.mock.MockDream()
-        self.index_generator = common.index_generator()
+        self.index_generator = utils.index_generator()
 
         await self.mock_dream.start_task
         assert self.mock_dream.server.is_serving()

@@ -32,7 +32,6 @@ else:
         __version__ = "?"
 
 from .abstract_dream import *
-from .index_generator import *
 from .schema_registry import *
 
 # Import sub modules
