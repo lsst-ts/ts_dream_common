@@ -21,10 +21,9 @@ from __future__ import annotations
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["MockDream", "ServerState", "ErrorCode", "RoofStatus", "Device"]
+__all__ = ["MockDream"]
 
 import asyncio
-import enum
 import logging
 import json
 import typing
@@ -32,6 +31,7 @@ import typing
 import jsonschema
 
 from ..abstract_dream import AbstractDream
+from ..enums import CommandResponse, Device, ErrorCode, RoofStatus, ServerState
 from ..schema_registry import registry
 from lsst.ts import tcpip, utils
 
@@ -41,46 +41,12 @@ STATUS_INTERVAL = 5
 # Interval between sending the mock DREAM server new data products [s].
 NEW_DATA_PRODUCTS_INTERVAL = 7
 
+# Duration for opening or closing the roof [s]. In reality this takes much
+# longer.
+ROOF_DURATION = 4
 
-class ServerState(enum.IntEnum):
-    """The state the mock DREAM server can be in."""
-
-    INITIALIZING = enum.auto()
-    HIBERNATING = enum.auto()
-    COOLING_DOWN = enum.auto()
-    CALIBRATING = enum.auto()
-    READY = enum.auto()
-    OPEN = enum.auto()
-    OBSERVING = enum.auto()
-    MAINTENANCE = enum.auto()
-    SHUTTING_DOWN = enum.auto()
-
-
-class ErrorCode(enum.IntEnum):
-    """Error Code enum."""
-
-    # TODO DM-33287: Add more ErrorCode values.
-    OK = enum.auto()
-
-
-class RoofStatus(enum.IntEnum):
-    """Roof status enum."""
-
-    CLOSED = enum.auto()
-    OPEN = enum.auto()
-    OPENING = enum.auto()
-    CLOSING = enum.auto()
-
-
-class Device(enum.IntEnum):
-    """Device enum."""
-
-    MASTER = enum.auto()
-    NORTH = enum.auto()
-    EAST = enum.auto()
-    SOUTH = enum.auto()
-    WEST = enum.auto()
-    ZENITH = enum.auto()
+# Duration for stopping DREAM [s].
+STOP_DURATION = 1
 
 
 class WeatherInfo:
@@ -304,22 +270,13 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         """Read commands and output replies."""
         try:
             self.log.info(f"The read_loop begins connected? {self.connected}")
-            validator = jsonschema.Draft7Validator(schema=registry["command"])
             while self.connected:
                 self.log.debug("Waiting for next incoming message.")
                 line = await self.reader.readuntil(tcpip.TERMINATOR)
                 if line:
                     line = line.decode().strip()
                     self.log.debug(f"Read command line: {line!r}")
-                    items = json.loads(line)
-                    # validate the incoming message
-                    # TODO DM-33287: Needs better error handling.
-                    validator.validate(items)
-                    key = items["key"]
-                    kwargs = items["parameters"]
-                    func = self.dispatch_dict[key]
-                    # TODO DM-33287: Needs sending acknowledgements.
-                    await func(**kwargs)
+                    asyncio.create_task(self.execute_and_monitor_command(line=line))
 
         except Exception:
             self.log.exception("read_loop failed. Disconnecting.")
@@ -332,6 +289,60 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         self.log.debug("Closing client.")
         await self.close_client()
 
+    async def execute_and_monitor_command(self, line: str) -> None:
+        """Validate a command line string against the command JSON schema. If
+        validation fails, send an error to the client. If validation succeeds,
+        send ACK, execute the command and send LAST when it's done.
+
+        Parameters
+        ----------
+        line : `str`
+            A string representing the command to execute and its parameters.
+        """
+
+        items = json.loads(line)
+        command_id = items["command_id"]
+
+        # Validate the incoming message. This ensures that the command sent
+        # actually does exist and that all mandatory keys in the JSON data
+        # exist. It doesn't ensure that the additional data (e.g. weather info)
+        # is correct though.
+        validator = jsonschema.Draft7Validator(schema=registry["command"])
+        try:
+            validator.validate(items)
+        except jsonschema.exceptions.ValidationError:
+            response_dict = {
+                "command_id": command_id,
+                "command_response": CommandResponse.INVALID_JSON,
+            }
+            await self.write(data=response_dict)
+            return
+
+        # First send an ACK Command Response to acknowledge the reception of
+        # the command.
+        response_dict = {
+            "command_id": command_id,
+            "command_response": CommandResponse.ACK,
+        }
+        await self.write(data=response_dict)
+
+        key = items["key"]
+        kwargs = items["parameters"]
+        func = self.dispatch_dict[key]
+        try:
+            await func(**kwargs)
+        except RuntimeError:
+            response_dict = {
+                "command_id": command_id,
+                "command_response": CommandResponse.COMMAND_FAILED,
+            }
+            await self.write(data=response_dict)
+            return
+
+        # Now that the command has finished, send a LAST Command Response.
+        response_dict["command_response"] = CommandResponse.LAST
+        await self.write(data=response_dict)
+
     async def resume(self) -> None:
         self.log.debug("resume")
         self.status_task = asyncio.create_task(self.status())
@@ -341,23 +352,26 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         # This can be improved by implementing a delay during which the roof is
         # opening.
         if self.master_server_status.roof_status == RoofStatus.CLOSED:
+            self.master_server_status.roof_status = RoofStatus.OPENING
+            await asyncio.sleep(ROOF_DURATION)
             self.master_server_status.roof_status = RoofStatus.OPEN
         else:
-            # TODO DM-33287: Needs better error handling.
-            pass
+            raise RuntimeError("Roof already open.")
 
     async def close_roof(self) -> None:
         self.log.debug("close_roof")
         # This can be improved by implementing a delay during which the roof is
         # closing.
         if self.master_server_status.roof_status == RoofStatus.OPEN:
+            self.master_server_status.roof_status = RoofStatus.CLOSING
+            await asyncio.sleep(ROOF_DURATION)
             self.master_server_status.roof_status = RoofStatus.CLOSED
         else:
-            # TODO DM-33287: Needs better error handling.
-            pass
+            raise RuntimeError("Roof already closed.")
 
     async def stop(self) -> None:
         self.log.debug("stop")
+        await asyncio.sleep(STOP_DURATION)
         self.status_task.cancel()
 
     async def set_ready_for_data(self, ready: bool) -> None:
@@ -376,8 +390,10 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
     ) -> None:
         self.log.debug(f"set_weather_info with weather_info={weather_info!r}")
         validator = jsonschema.Draft7Validator(schema=registry["weather_info"])
-        # TODO DM-33287: Needs better error handling.
-        validator.validate(weather_info)
+        try:
+            validator.validate(weather_info)
+        except jsonschema.exceptions.ValidationError:
+            raise RuntimeError("Invalid weather information.")
         for key in weather_info:
             setattr(self.weather_info, key, weather_info[key])
 
@@ -393,8 +409,12 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
                 validator = jsonschema.Draft7Validator(
                     schema=registry["master_server_status"]
                 )
-                # TODO DM-33287: Needs better error handling.
-                validator.validate(master_status)
+                # It is probably too much to validate the outgoing JSON data
+                # here but I added it as an example anyway.
+                try:
+                    validator.validate(master_status)
+                except jsonschema.exceptions.ValidationError:
+                    raise RuntimeError("Invalid master status.")
                 await self.write(master_status)
                 await asyncio.sleep(STATUS_INTERVAL)
 
@@ -423,8 +443,12 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
                 validator = jsonschema.Draft7Validator(
                     schema=registry["new_data_products"]
                 )
-                # TODO DM-33287: Needs better error handling.
-                validator.validate(new_data_products)
+                # It is probably too much to validate the outgoing JSON data
+                # here but I added it as an example anyway.
+                try:
+                    validator.validate(new_data_products)
+                except jsonschema.exceptions.ValidationError:
+                    raise RuntimeError("Invalid new data products.")
                 await self.write(new_data_products)
                 await asyncio.sleep(NEW_DATA_PRODUCTS_INTERVAL)
 

@@ -32,6 +32,7 @@ else:
         __version__ = "?"
 
 from .abstract_dream import *
+from .enums import *
 from .schema_registry import *
 
 # Import sub modules

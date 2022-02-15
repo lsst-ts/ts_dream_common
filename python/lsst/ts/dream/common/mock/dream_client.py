@@ -136,40 +136,15 @@ class MockDreamClient:
             If it takes more than COMMUNICATE_TIMEOUT seconds
             to acquire the lock or write the data.
         """
+        command_id = next(self.index_generator)
         json_str = json.dumps(
             {
-                "command_id": next(self.index_generator),
+                "command_id": command_id,
                 "key": command,
                 "parameters": parameters,
                 "time_command_sent": utils.current_tai(),
             }
         )
-        await asyncio.wait_for(
-            self._basic_run_command(json_str), timeout=COMMUNICATE_TIMEOUT
-        )
-
-    async def _basic_run_command(self, json_str: str) -> None:
-        """Write a json-encoded command dict. Potentially wait forever.
-
-        Parameters
-        ----------
-        json_str : `str`
-            json-encoded dict to write. The dict should be of the form::
-
-                {
-                    "command_id": int,
-                    "command": command_str,
-                    "parameters": params_dict,
-                    "time_command_sent": float
-                }
-
-        Raises
-        ------
-        RuntimeError
-            If the command fails.
-        ConnectionError
-            If disconnected before command is acknowledged.
-        """
         async with self.stream_lock:
             if not self.connected:
                 raise ConnectionError("Not connected; cannot send the command.")
