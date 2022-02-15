@@ -26,6 +26,7 @@ __all__ = ["MockDream"]
 import asyncio
 import logging
 import json
+import random
 import typing
 
 import jsonschema
@@ -423,34 +424,31 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
 
     async def new_data_products(self) -> None:
         self.log.debug("new_data_products")
-        new_data_product_1 = NewDataProduct(
-            name="NewDataProductOne", location="file:///", timestamp=utils.current_tai()
-        )
-        new_data_product_2 = NewDataProduct(
-            name="NewDataProductTwo", location="file:///", timestamp=utils.current_tai()
-        )
-        metadata = [new_data_product_1.asdict(), new_data_product_2.asdict()]
-        new_data_products = {
-            "amount": len(metadata),
-            "metadata": metadata,
-        }
-        try:
-            while True:
-                # TODO DM-33287: Make sure that the new data products
-                #  information gets updated ramdomly to mock a real DREAM
-                #  server.
-                self.log.debug("Sending new data products.")
-                validator = jsonschema.Draft7Validator(
-                    schema=registry["new_data_products"]
+        words = {0: "Zero", 1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five"}
+        while True:
+            self.log.debug("Generating new data products.")
+            num_data_products = random.randint(1, 6)
+            metadata = []
+            for i in range(num_data_products):
+                metadata.append(
+                    NewDataProduct(
+                        name=f"NewDataProduct{words[i]}",
+                        location="file:///",
+                        timestamp=utils.current_tai(),
+                    ).asdict()
                 )
-                # It is probably too much to validate the outgoing JSON data
-                # here but I added it as an example anyway.
-                try:
-                    validator.validate(new_data_products)
-                except jsonschema.exceptions.ValidationError:
-                    raise RuntimeError("Invalid new data products.")
-                await self.write(new_data_products)
-                await asyncio.sleep(NEW_DATA_PRODUCTS_INTERVAL)
+            new_data_products = {
+                "amount": len(metadata),
+                "metadata": metadata,
+            }
 
-        except Exception:
-            self.log.exception("new_data_products loop failed.")
+            self.log.debug("Sending new data products.")
+            validator = jsonschema.Draft7Validator(schema=registry["new_data_products"])
+            # It is probably too much to validate the outgoing JSON data
+            # here but I added it as an example anyway.
+            try:
+                validator.validate(new_data_products)
+            except jsonschema.exceptions.ValidationError:
+                raise RuntimeError("Invalid new data products.")
+            await self.write(new_data_products)
+            await asyncio.sleep(NEW_DATA_PRODUCTS_INTERVAL)
