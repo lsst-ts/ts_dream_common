@@ -32,8 +32,9 @@ import typing
 import jsonschema
 
 from ..abstract_dream import AbstractDream
-from ..enums import CommandResponse, Device, ErrorCode, RoofStatus, ServerState
+from ..enums import CommandResponse, RoofStatus, ServerState
 from ..schema_registry import registry
+from ..server_status import MasterServerStatus
 from lsst.ts import tcpip, utils
 
 # Interval between sending the mock DREAM server status [s].
@@ -45,6 +46,12 @@ NEW_DATA_PRODUCTS_INTERVAL = 7
 # Duration for opening or closing the roof [s]. In reality this takes much
 # longer.
 ROOF_DURATION = 4
+
+# Duration to start observing [s]. In reality this probably takes much longer.
+START_OBSERVING_DURATION = 3
+
+# Duration to stop observing [s]. In reality this probably takes much longer.
+STOP_OBSERVING_DURATION = 2
 
 # Duration for stopping DREAM [s].
 STOP_DURATION = 1
@@ -82,93 +89,6 @@ class WeatherInfo:
         self.rain = 0.0
         self.cloudcover = 0.0
         self.safe_observing_conditions = False
-
-
-class MasterServerStatus:
-    """Class that holds the status of the master server.
-
-    Attributes
-    ----------
-        device : `Device`
-            The device.
-        state : `ServerState`
-            The state of the server.
-        start_time : `float`
-            The last start time UNIX time stamp [s].
-        stop_time : `float`
-            The last stop time UNIX time stamp [s].
-        error_code : `ErrorCode`
-            The error code.
-        rain_sensor : `bool`
-            A rain sensor is present (True) or not (False).
-        roof_status : `RoofStatus`
-            The status of the roof.
-    """
-
-    def __init__(self) -> None:
-        self.device = Device.MASTER
-        self.state = ServerState.INITIALIZING
-        self.start_time = 0.0
-        self.stop_time = 0.0
-        self.error_code = ErrorCode.OK
-        self.rain_sensor = True
-        self.roof_status = RoofStatus.CLOSED
-
-    def asdict(self) -> typing.Dict[str, typing.Any]:
-        return {
-            "device": self.device,
-            "state": self.state,
-            "start_time": self.start_time,
-            "stop_time": self.stop_time,
-            "error_code": self.error_code,
-            "rain_sensor": self.rain_sensor,
-            "roof_status": self.roof_status,
-        }
-
-
-class CameraServerStatus:
-    """Class that holds the status of a camera server.
-
-    Parameters
-    ----------
-    device : `Device`
-        The device.
-
-    Attributes
-    ----------
-        state : `ServerState`
-            The state of the server.
-        error_code : `ErrorCode`
-            The error code.
-        altitude : `float`
-            The altitude [º].
-        azimuth : `float`
-            The azimuth [º].
-        last_exposure_time_stamp : `float`
-            The last exposure timestamp [s].
-        exposure_time : `float`
-            The exposure time [s].
-    """
-
-    def __init__(self, device: Device) -> None:
-        self.device = device
-        self.state = ServerState.INITIALIZING
-        self.error_code = ErrorCode.OK
-        self.altitude = 0.0
-        self.azimuth = 0.0
-        self.last_exposure_time_stamp = 0.0
-        self.exposure_time = 0.0
-
-    def asdict(self) -> typing.Dict[str, typing.Any]:
-        return {
-            "device": self.device,
-            "state": self.state,
-            "error_code": self.error_code,
-            "altitude": self.altitude,
-            "azimuth": self.azimuth,
-            "last_exposure_time_stamp": self.last_exposure_time_stamp,
-            "exposure_time": self.exposure_time,
-        }
 
 
 class NewDataProduct:
@@ -245,6 +165,9 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         if self.connected:
             self.log.info("Client connected.")
             self.read_loop_task = asyncio.create_task(self.read_loop())
+            self.status_task = asyncio.create_task(self.status())
+            # Need to find a better way to consider initialization done.
+            self.master_server_status.state = ServerState.HIBERNATING
         else:
             self.log.info("Client disconnected.")
 
@@ -287,6 +210,8 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         """Stop sending telemetry and close the client."""
         self.log.debug("Cancelling read_loop_task.")
         self.read_loop_task.cancel()
+        self.log.debug("Cancelling status_task.")
+        self.status_task.cancel()
         self.log.debug("Closing client.")
         await self.close_client()
 
@@ -346,7 +271,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
 
     async def resume(self) -> None:
         self.log.debug("resume")
-        self.status_task = asyncio.create_task(self.status())
+        self.master_server_status.state = ServerState.READY
 
     async def open_roof(self) -> None:
         self.log.debug("open_roof")
@@ -356,6 +281,9 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
             self.master_server_status.roof_status = RoofStatus.OPENING
             await asyncio.sleep(ROOF_DURATION)
             self.master_server_status.roof_status = RoofStatus.OPEN
+            self.master_server_status.state = ServerState.OPEN
+            await asyncio.sleep(START_OBSERVING_DURATION)
+            self.master_server_status.state = ServerState.OBSERVING
         else:
             raise RuntimeError("Roof already open.")
 
@@ -364,6 +292,9 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         # This can be improved by implementing a delay during which the roof is
         # closing.
         if self.master_server_status.roof_status == RoofStatus.OPEN:
+            self.master_server_status.state = ServerState.SHUTTING_DOWN
+            await asyncio.sleep(STOP_OBSERVING_DURATION)
+            self.master_server_status.state = ServerState.CLOSED
             self.master_server_status.roof_status = RoofStatus.CLOSING
             await asyncio.sleep(ROOF_DURATION)
             self.master_server_status.roof_status = RoofStatus.CLOSED
@@ -374,6 +305,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         self.log.debug("stop")
         await asyncio.sleep(STOP_DURATION)
         self.status_task.cancel()
+        self.master_server_status.state = ServerState.HIBERNATING
 
     async def set_ready_for_data(self, ready: bool) -> None:
         self.log.debug(f"set_ready_for_data with ready={ready!r}")
@@ -402,9 +334,6 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         self.log.debug("status")
         try:
             while True:
-                # TODO DM-33287: Make sure that the status gets updated when
-                #  commands are sent and that it includes the camera server
-                #  statuses.
                 self.log.debug("Sending status.")
                 master_status = self.master_server_status.asdict()
                 validator = jsonschema.Draft7Validator(

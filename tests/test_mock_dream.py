@@ -51,6 +51,10 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.1)
         assert self.mock_dream.connected
 
+        self.expected_status = common.MasterServerStatus()
+        self.expected_status.state = common.ServerState.HIBERNATING
+        self.expected_status.roof_status = common.RoofStatus.CLOSED
+
     async def asyncTearDown(self) -> None:
         if self.mock_dream.connected:
             await self.mock_dream.disconnect()
@@ -86,6 +90,23 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         self.writer.write(st.encode() + tcpip.TERMINATOR)
         await self.writer.drain()
 
+    async def validate_command_response(
+        self, command_id: int, command_response: common.CommandResponse
+    ) -> None:
+        data = await self.read()
+        assert data["command_id"] == command_id
+        assert data["command_response"] == command_response
+
+    async def validate_server_status(self) -> None:
+        data = await self.read()
+        assert data["device"] == common.Device.MASTER
+        assert data["state"] == self.expected_status.state
+        assert data["start_time"] == 0.0
+        assert data["stop_time"] == 0.0
+        assert data["error_code"] == common.ErrorCode.OK
+        assert data["rain_sensor"] is True
+        assert data["roof_status"] == self.expected_status.roof_status
+
     async def test_invalid_json(self) -> None:
         # "parameters" is mandatory
         command_id = next(self.index_generator)
@@ -94,9 +115,10 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             key="resume",
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.INVALID_JSON
+        await self.validate_server_status()
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.INVALID_JSON
+        )
 
         # The "openHatch" command doesn't exist.
         command_id = next(self.index_generator)
@@ -106,15 +128,12 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.INVALID_JSON
-
-    async def validate_roof_status(self, roof_status: common.RoofStatus) -> None:
-        assert self.mock_dream.master_server_status.roof_status == roof_status
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.INVALID_JSON
+        )
 
     async def test_open_and_close_roof(self) -> None:
-        await self.validate_roof_status(common.RoofStatus.CLOSED)
+        await self.validate_server_status()
 
         command_id = next(self.index_generator)
         await self.write(
@@ -123,14 +142,17 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        await self.validate_roof_status(common.RoofStatus.OPENING)
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.LAST
-        await self.validate_roof_status(common.RoofStatus.OPEN)
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        self.expected_status.state = common.ServerState.OPEN
+        self.expected_status.roof_status = common.RoofStatus.OPEN
+        await self.validate_server_status()
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.LAST
+        )
+        self.expected_status.state = common.ServerState.OBSERVING
+        await self.validate_server_status()
 
         command_id = next(self.index_generator)
         await self.write(
@@ -139,13 +161,14 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.COMMAND_FAILED
-        await self.validate_roof_status(common.RoofStatus.OPEN)
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id,
+            command_response=common.CommandResponse.COMMAND_FAILED,
+        )
+        await self.validate_server_status()
 
         command_id = next(self.index_generator)
         await self.write(
@@ -154,14 +177,17 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        await self.validate_roof_status(common.RoofStatus.CLOSING)
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.LAST
-        await self.validate_roof_status(common.RoofStatus.CLOSED)
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        self.expected_status.state = common.ServerState.CLOSED
+        self.expected_status.roof_status = common.RoofStatus.CLOSING
+        await self.validate_server_status()
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.LAST
+        )
+        self.expected_status.roof_status = common.RoofStatus.CLOSED
+        await self.validate_server_status()
 
         command_id = next(self.index_generator)
         await self.write(
@@ -170,13 +196,14 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.COMMAND_FAILED
-        await self.validate_roof_status(common.RoofStatus.CLOSED)
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id,
+            command_response=common.CommandResponse.COMMAND_FAILED,
+        )
+        await self.validate_server_status()
 
     async def validate_dream_status_task(self, done: bool) -> None:
         assert self.mock_dream.status_task.done() is done
@@ -191,24 +218,18 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.LAST
+        self.expected_status.state = common.ServerState.HIBERNATING
+        await self.validate_server_status()
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.LAST
+        )
         await self.validate_dream_status_task(done=False)
 
-        data = await self.read()
-        # TODO DM-33287: Validate that the status gets updated when commands
-        #  are sent.
-        assert data["device"] == common.Device.MASTER
-        assert data["state"] == common.ServerState.INITIALIZING
-        assert data["start_time"] == 0.0
-        assert data["stop_time"] == 0.0
-        assert data["error_code"] == common.ErrorCode.OK
-        assert data["rain_sensor"] is True
-        assert data["roof_status"] == common.RoofStatus.CLOSED
+        self.expected_status.state = common.ServerState.READY
+        await self.validate_server_status()
 
         command_id = next(self.index_generator)
         await self.write(
@@ -217,12 +238,12 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.LAST
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.LAST
+        )
         await self.validate_dream_status_task(done=True)
 
     async def validate_ready(self, ready_for_data: bool, done: bool) -> None:
@@ -239,12 +260,13 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={"ready": True},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.LAST
+        await self.validate_server_status()
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.LAST
+        )
         await self.validate_ready(ready_for_data=True, done=False)
 
         data = await self.read()
@@ -263,12 +285,12 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={"ready": False},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.LAST
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.LAST
+        )
         await self.validate_ready(ready_for_data=False, done=True)
 
     def validate_weather_info(
@@ -313,12 +335,13 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={"weather_info": weather_info},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.LAST
+        await self.validate_server_status()
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.LAST
+        )
         self.validate_weather_info(expected_weather_info=weather_info)
 
         # Now set new, invalid, values and verify that the mock DREAM server
@@ -340,9 +363,10 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
             parameters={"weather_info": weather_info},
             time_command_sent=utils.current_tai(),
         )
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.ACK
-        data = await self.read()
-        assert data["command_id"] == command_id
-        assert data["command_response"] == common.CommandResponse.COMMAND_FAILED
+        await self.validate_command_response(
+            command_id=command_id, command_response=common.CommandResponse.ACK
+        )
+        await self.validate_command_response(
+            command_id=command_id,
+            command_response=common.CommandResponse.COMMAND_FAILED,
+        )

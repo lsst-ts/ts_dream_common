@@ -34,6 +34,7 @@ class ServerState(enum.IntEnum):
     READY = enum.auto()
     OPEN = enum.auto()
     OBSERVING = enum.auto()
+    CLOSED = enum.auto()
     MAINTENANCE = enum.auto()
     SHUTTING_DOWN = enum.auto()
 
