@@ -130,7 +130,6 @@ class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
         await self.validate_command_response(
             command_response=common.CommandResponse.LAST
         )
-        await self.validate_dream_status_task(done=True)
 
     async def validate_ready(self, ready_for_data: bool, done: bool) -> None:
         assert self.mock_dream.client_ready_for_data is ready_for_data

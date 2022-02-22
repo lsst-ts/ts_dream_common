@@ -304,7 +304,6 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
     async def stop(self) -> None:
         self.log.debug("stop")
         await asyncio.sleep(STOP_DURATION)
-        self.status_task.cancel()
         self.master_server_status.state = ServerState.HIBERNATING
 
     async def set_ready_for_data(self, ready: bool) -> None:
