@@ -4,6 +4,19 @@
 Version History
 ===============
 
+v0.3.0
+======
+
+* Add command responses and error handling.
+* Make sure that 'random' new data products are generated.
+* Master Server status gets updated whith the commands sent.
+* Add a dream_client_runner to demonstrate how Rubin Observatory will interact with DREAM.
+
+Requires:
+
+* ts_tcpip 0.3
+* ts_utils 1.0
+
 v0.2.0
 ======
 
