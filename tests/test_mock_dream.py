@@ -34,7 +34,7 @@ logging.basicConfig(
 )
 
 # Standard timeout in seconds.
-TIMEOUT = 5
+TIMEOUT = 60
 
 
 class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
