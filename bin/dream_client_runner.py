@@ -1,4 +1,6 @@
-# This file is part of ts_dream.
+#!/usr/bin/env python
+
+# This file is part of ts_dream_common.
 #
 # Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
 # This product includes software developed by the LSST Project
@@ -19,18 +21,34 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import typing
+import asyncio
+import logging
 
-# See https://confluence.lsstcorp.org/display/LTS/Enabling+Mypy+in+Pytest for
-# why this construction is needed.
-if typing.TYPE_CHECKING:
-    __version__ = "?"
-else:
+from lsst.ts.dream import common
+
+logging.basicConfig(
+    format="%(asctime)s:%(levelname)s:%(name)s:%(message)s", level=logging.INFO
+)
+
+
+async def main() -> None:
+    """Main method that gets executed when running from the command line."""
+    logging.info("main method")
+    mock_dream = common.mock.MockDream()
+    await mock_dream.start_task
+    assert mock_dream.server.is_serving()
+
+    mock_dream_client_runner = common.mock.MockDreamClientRunner()
+    await mock_dream_client_runner.execute_nominal_run()
+
+    await mock_dream.close()
+    await mock_dream.server.wait_closed()
+
+
+if __name__ == "__main__":
+    logging.info("main")
     try:
-        from .version import *
-    except ImportError:
-        __version__ = "?"
-
-from .dream import *
-from .dream_client import *
-from .dream_client_runner import *
+        logging.info("Calling main method")
+        asyncio.run(main())
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        pass

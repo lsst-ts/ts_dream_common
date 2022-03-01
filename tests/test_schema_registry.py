@@ -34,7 +34,7 @@ logging.basicConfig(
 
 class SchemaRegistryTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_command_schema(self) -> None:
-        schema = common.registry["command"]
+        validator = jsonschema.Draft7Validator(schema=common.registry["command"])
         # A command with an empty 'parameters' keyword, which should pass.
         command = {
             "command_id": 1,
@@ -42,7 +42,7 @@ class SchemaRegistryTestCase(unittest.IsolatedAsyncioTestCase):
             "parameters": {},
             "time_command_sent": 1.12345,
         }
-        jsonschema.validate(command, schema)
+        validator.validate(command)
 
         # A command with a non-empty 'parameters' keyword, which should pass.
         command = {
@@ -51,7 +51,7 @@ class SchemaRegistryTestCase(unittest.IsolatedAsyncioTestCase):
             "parameters": {"ready": True},
             "time_command_sent": 1.12345,
         }
-        jsonschema.validate(command, schema)
+        validator.validate(command)
 
         # A command without a 'parameters' keyword, which should fail.
         with pytest.raises(jsonschema.exceptions.ValidationError):
@@ -60,4 +60,4 @@ class SchemaRegistryTestCase(unittest.IsolatedAsyncioTestCase):
                 "key": "readyForData",
                 "time_command_sent": 1.12345,
             }
-            jsonschema.validate(command_without_parameters, schema)
+            validator.validate(command_without_parameters)

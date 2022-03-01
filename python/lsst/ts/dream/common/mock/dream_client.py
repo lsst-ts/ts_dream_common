@@ -27,13 +27,11 @@ import typing
 
 from lsst.ts import tcpip, utils
 
-# Time limit for connecting to the RPi (seconds)
+# Timeout value for connecting to the DREAM server [s].
 CONNECT_TIMEOUT = 5
 
-# Time limit for communicating with the DREAM server (seconds).
-# This includes writing a command and reading the response and reading
-# telemetry.
-COMMUNICATE_TIMEOUT = 5
+# Timeout value for reading data from the DREAM server [s].
+READ_TIMEOUT = 25
 
 
 class MockDreamClient:
@@ -104,7 +102,7 @@ class MockDreamClient:
         assert self.reader is not None  # make mypy happy
 
         read_bytes = await asyncio.wait_for(
-            self.reader.readuntil(tcpip.TERMINATOR), timeout=COMMUNICATE_TIMEOUT
+            self.reader.readuntil(tcpip.TERMINATOR), timeout=READ_TIMEOUT
         )
         try:
             data = json.loads(read_bytes.decode())
@@ -116,7 +114,7 @@ class MockDreamClient:
             )
         return data
 
-    async def run_command(self, command: str, **parameters: typing.Any) -> None:
+    async def run_command(self, command: str, **parameters: typing.Any) -> int:
         """Write a command. Time out if it takes too long.
 
         Parameters
@@ -136,40 +134,15 @@ class MockDreamClient:
             If it takes more than COMMUNICATE_TIMEOUT seconds
             to acquire the lock or write the data.
         """
+        command_id = next(self.index_generator)
         json_str = json.dumps(
             {
-                "command_id": next(self.index_generator),
+                "command_id": command_id,
                 "key": command,
                 "parameters": parameters,
                 "time_command_sent": utils.current_tai(),
             }
         )
-        await asyncio.wait_for(
-            self._basic_run_command(json_str), timeout=COMMUNICATE_TIMEOUT
-        )
-
-    async def _basic_run_command(self, json_str: str) -> None:
-        """Write a json-encoded command dict. Potentially wait forever.
-
-        Parameters
-        ----------
-        json_str : `str`
-            json-encoded dict to write. The dict should be of the form::
-
-                {
-                    "command_id": int,
-                    "command": command_str,
-                    "parameters": params_dict,
-                    "time_command_sent": float
-                }
-
-        Raises
-        ------
-        RuntimeError
-            If the command fails.
-        ConnectionError
-            If disconnected before command is acknowledged.
-        """
         async with self.stream_lock:
             if not self.connected:
                 raise ConnectionError("Not connected; cannot send the command.")
@@ -177,3 +150,4 @@ class MockDreamClient:
 
             self.writer.write(json_str.encode() + tcpip.TERMINATOR)
             await self.writer.drain()
+        return command_id

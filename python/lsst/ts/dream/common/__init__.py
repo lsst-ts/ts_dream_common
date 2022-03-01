@@ -32,7 +32,9 @@ else:
         __version__ = "?"
 
 from .abstract_dream import *
+from .enums import *
 from .schema_registry import *
+from .server_status import *
 
 # Import sub modules
 from . import mock
