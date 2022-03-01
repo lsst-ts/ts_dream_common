@@ -109,7 +109,7 @@ class NewDataProduct:
         self.location = location
         self.timestamp = timestamp
 
-    def asdict(self) -> typing.Dict[str, typing.Any]:
+    def as_dict(self) -> typing.Dict[str, typing.Any]:
         return {
             "name": self.name,
             "location": self.location,
@@ -334,7 +334,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         try:
             while True:
                 self.log.debug("Sending status.")
-                master_status = self.master_server_status.asdict()
+                master_status = self.master_server_status.as_dict()
                 validator = jsonschema.Draft7Validator(
                     schema=registry["master_server_status"]
                 )
@@ -363,7 +363,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
                         name=f"NewDataProduct{words[i]}",
                         location="file:///",
                         timestamp=utils.current_tai(),
-                    ).asdict()
+                    ).as_dict()
                 )
             new_data_products = {
                 "amount": len(metadata),

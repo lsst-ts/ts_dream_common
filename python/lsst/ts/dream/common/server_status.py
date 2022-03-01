@@ -56,7 +56,7 @@ class MasterServerStatus:
         self.rain_sensor = True
         self.roof_status = RoofStatus.CLOSED
 
-    def asdict(self) -> typing.Dict[str, typing.Any]:
+    def as_dict(self) -> typing.Dict[str, typing.Any]:
         return {
             "device": self.device,
             "state": self.state,
@@ -83,9 +83,9 @@ class CameraServerStatus:
         error_code : `ErrorCode`
             The error code.
         altitude : `float`
-            The altitude [º].
+            The altitude [deg].
         azimuth : `float`
-            The azimuth [º].
+            The azimuth [deg].
         last_exposure_time_stamp : `float`
             The last exposure timestamp [s].
         exposure_time : `float`
@@ -101,7 +101,7 @@ class CameraServerStatus:
         self.last_exposure_time_stamp = 0.0
         self.exposure_time = 0.0
 
-    def asdict(self) -> typing.Dict[str, typing.Any]:
+    def as_dict(self) -> typing.Dict[str, typing.Any]:
         return {
             "device": self.device,
             "state": self.state,
