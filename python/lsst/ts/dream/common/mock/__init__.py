@@ -33,3 +33,4 @@ else:
 
 from .dream import *
 from .dream_client import *
+from .dream_client_runner import *
