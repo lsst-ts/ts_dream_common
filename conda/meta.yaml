@@ -1,0 +1,41 @@
+{% set data= load_setup_py_data() %}
+package:
+  name: "ts-dream-common"
+  version: {{ data.get('version') }}
+
+source:
+  path: ../
+
+build:
+  noarch: generic
+  script: {{ PYTHON }} -m pip install --no-deps --ignore-installed .
+
+test:
+  requires:
+    - ts-conda-build
+    - ts-tcpip
+    - ts-utils
+  source_files:
+    - python
+    - bin
+    - tests
+  commands:
+    - pytest
+
+requirements:
+  host:
+    - python
+    - pip
+    - setuptools_scm
+    - setuptools
+    - pytest-runner
+  build:
+    - python {{ python }}
+    - setuptools_scm
+    - setuptools
+  run:
+    - python
+    - setuptools
+    - setuptools_scm
+    - ts-tcpip
+    - ts-utils

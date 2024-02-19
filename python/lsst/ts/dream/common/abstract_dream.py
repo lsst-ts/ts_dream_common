@@ -22,7 +22,6 @@
 __all__ = ["AbstractDream"]
 
 import typing
-
 from abc import ABC, abstractmethod
 
 
