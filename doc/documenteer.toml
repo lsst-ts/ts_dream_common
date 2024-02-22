@@ -1,0 +1,6 @@
+[project]
+title = "ts_dream_common"
+copyright = "2015-2024 Association of Universities for Research in Astronomy, Inc. (AURA)"
+
+[project.python]
+package = "lsst.ts.dream.common"

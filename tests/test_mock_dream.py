@@ -26,8 +26,8 @@ import random
 import typing
 import unittest
 
-from lsst.ts.dream import common
 from lsst.ts import tcpip, utils
+from lsst.ts.dream import common
 
 logging.basicConfig(
     format="%(asctime)s:%(levelname)s:%(name)s:%(message)s", level=logging.DEBUG
@@ -44,7 +44,7 @@ class MockDreamTestCase(unittest.IsolatedAsyncioTestCase):
         self.index_generator = utils.index_generator()
 
         await self.mock_dream.start_task
-        assert self.mock_dream.server.is_serving()
+        assert self.mock_dream._server.is_serving()
         self.reader, self.writer = await asyncio.open_connection(
             host=tcpip.LOCAL_HOST, port=self.mock_dream.port
         )

@@ -4,6 +4,12 @@
 Version History
 ===============
 
+v0.4.0
+======
+
+* Use pyproject.toml
+* Align to updated lsst.ts.tcpip module
+
 v0.3.0
 ======
 

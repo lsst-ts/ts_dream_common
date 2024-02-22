@@ -24,7 +24,6 @@ import unittest
 
 import jsonschema
 import pytest
-
 from lsst.ts.dream import common
 
 logging.basicConfig(

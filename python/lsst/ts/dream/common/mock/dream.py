@@ -24,18 +24,18 @@ from __future__ import annotations
 __all__ = ["MockDream"]
 
 import asyncio
-import logging
 import json
+import logging
 import random
 import typing
 
 import jsonschema
+from lsst.ts import tcpip, utils
 
 from ..abstract_dream import AbstractDream
 from ..enums import CommandResponse, RoofStatus, ServerState
 from ..schema_registry import registry
 from ..server_status import MasterServerStatus
-from lsst.ts import tcpip, utils
 
 # Interval between sending the mock DREAM server status [s].
 STATUS_INTERVAL = 5
@@ -160,7 +160,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         # Hold the weather info.
         self.weather_info = WeatherInfo()
 
-    def connect_callback(self, server: MockDream) -> None:
+    async def connect_callback(self, server: MockDream) -> None:
         """A client has connected or disconnected."""
         if self.connected:
             self.log.info("Client connected.")
@@ -186,8 +186,8 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
         st = json.dumps({**data})
         self.log.debug(st)
         if self.connected:
-            self.writer.write(st.encode() + tcpip.TERMINATOR)
-            await self.writer.drain()
+            self._writer.write(st.encode() + tcpip.TERMINATOR)
+            await self._writer.drain()
         self.log.debug("Done")
 
     async def read_loop(self) -> None:
@@ -196,7 +196,7 @@ class MockDream(AbstractDream, tcpip.OneClientServer):
             self.log.info(f"The read_loop begins connected? {self.connected}")
             while self.connected:
                 self.log.debug("Waiting for next incoming message.")
-                line = await self.reader.readuntil(tcpip.TERMINATOR)
+                line = await self._reader.readuntil(tcpip.TERMINATOR)
                 if line:
                     line = line.decode().strip()
                     self.log.debug(f"Read command line: {line!r}")

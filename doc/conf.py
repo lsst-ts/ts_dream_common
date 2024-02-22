@@ -19,18 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Sphinx configuration file for an LSST stack package.
+import lsst.ts.dream.common  # noqa
+from documenteer.conf.pipelinespkg import *  # type: ignore # noqa
 
-This configuration only affects single-package Sphinx documentation builds.
-For more information, see:
-https://developer.lsst.io/stack/building-single-package-docs.html
-"""
-
-from documenteer.conf.pipelinespkg import *  # noqa
-
-project = "ts_dream_common"
-html_theme_options["logotext"] = project  # type: ignore # noqa
-html_title = project
-html_short_title = project
-
-intersphinx_mapping["ts_tcpip"] = ("https://ts-tcpip.lsst.io", None)  # type: ignore # noqa
+intersphinx_mapping["ts_tcpip"] = ("https://ts-tcpip.lsst.io", "tcpip")  # type: ignore # noqa

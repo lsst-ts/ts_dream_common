@@ -38,7 +38,7 @@ class MockDreamClientTestCase(unittest.IsolatedAsyncioTestCase):
         self.mock_dream_client = common.mock.MockDreamClient()
 
         await self.mock_dream.start_task
-        assert self.mock_dream.server.is_serving()
+        assert self.mock_dream._server.is_serving()
 
         assert self.mock_dream_client.connected is False
         await self.mock_dream_client.connect()
